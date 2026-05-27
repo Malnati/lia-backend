@@ -1,0 +1,4 @@
+# Copy values from /Users/mal/GitHub/malnati/lia/.env when available.
+SUPABASE_URL=https://example.supabase.co
+SUPABASE_ANON_KEY=replace-with-public-anon-key
+SUPABASE_SERVICE_ROLE_KEY=replace-with-backend-only-service-role-key

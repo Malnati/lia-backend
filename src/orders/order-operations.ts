@@ -1,0 +1,82 @@
+import { badRequest, notFound } from '../http-error';
+import type { Order, OrderCheckpoint, UpdateCheckpointInput, UpdateOrderInput } from './order.types';
+
+export const checkpointKeys = [
+  'pickup_checkin',
+  'pickup_checkout',
+  'model_production_start',
+  'model_production_done',
+  'prosthesis_production_start',
+  'prosthesis_production_done',
+  'delivery_checkin',
+  'delivery_checkout'
+] as const;
+
+export type CheckpointKey = (typeof checkpointKeys)[number];
+
+export const maxAttachmentSizeBytes = 5 * 1024 * 1024;
+
+const allowedAttachmentMimeTypes = new Set(['image/webp', 'image/jpeg', 'image/png']);
+
+export function isAllowedAttachmentMime(contentType: string): boolean {
+  return allowedAttachmentMimeTypes.has(contentType);
+}
+
+export function bumpVersion(order: Pick<Order, 'version'>): void {
+  order.version = (order.version ?? 0) + 1;
+}
+
+export function applyOrderUpdate(order: Order, patch: UpdateOrderInput): Order {
+  const fields: Array<keyof UpdateOrderInput> = [
+    'customerName',
+    'customerPhone',
+    'deliveryAddress',
+    'product',
+    'status',
+    'paymentStatus',
+    'pendingSync',
+    'notes'
+  ];
+
+  for (const field of fields) {
+    const value = patch[field];
+    if (value !== undefined) {
+      (order[field] as never) = value as never;
+    }
+  }
+
+  bumpVersion(order);
+  return order;
+}
+
+export function applyCheckpointUpdate(order: Order, checkpointKey: string, patch: UpdateCheckpointInput): Order {
+  if (!checkpointKeys.includes(checkpointKey as CheckpointKey)) {
+    throw badRequest(`Unsupported checkpoint ${checkpointKey}`);
+  }
+
+  const checkpoint = order.checkpoints.find((item) => item.key === checkpointKey);
+  if (!checkpoint) {
+    throw notFound(`Checkpoint ${checkpointKey} not found`);
+  }
+
+  if (patch.completed !== undefined) checkpoint.completed = patch.completed;
+  if (patch.actor !== undefined) checkpoint.actor = patch.actor;
+  if (patch.timestamp !== undefined) checkpoint.timestamp = patch.timestamp;
+  if (patch.notes !== undefined) checkpoint.notes = patch.notes;
+
+  bumpVersion(order);
+  return order;
+}
+
+export function createDefaultCheckpoints(): OrderCheckpoint[] {
+  return [
+    { key: 'pickup_checkin', label: 'Retirada check-in', completed: false },
+    { key: 'pickup_checkout', label: 'Retirada check-out', completed: false },
+    { key: 'model_production_start', label: 'Produção de molde início', completed: false },
+    { key: 'model_production_done', label: 'Produção de molde conclusão', completed: false },
+    { key: 'prosthesis_production_start', label: 'Produção de prótese início', completed: false },
+    { key: 'prosthesis_production_done', label: 'Produção de prótese conclusão', completed: false },
+    { key: 'delivery_checkin', label: 'Entrega check-in', completed: false },
+    { key: 'delivery_checkout', label: 'Entrega check-out', completed: false }
+  ];
+}

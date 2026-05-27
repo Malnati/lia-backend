@@ -1,0 +1,22 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "lia-backend",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-05-27",
+  "compatibility_flags": ["nodejs_compat"],
+  "routes": [
+    {
+      "pattern": "api.aneety.com",
+      "custom_domain": true
+    }
+  ],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "vars": {
+    "CORS_ORIGINS": "https://aneety.com,https://core.aneety.com,https://pwa.aneety.com,https://desktop.aneety.com,https://dashboard.aneety.com",
+    "LIA_DEFAULT_TENANT_ID": "00000000-0000-0000-0000-000000000000",
+    "PAYMENT_GATEWAY_PROVIDER": "pending_gateway"
+  }
+}
