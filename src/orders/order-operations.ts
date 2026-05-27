@@ -1,5 +1,5 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import type { Order, OrderCheckpoint } from './schemas/order.schema';
+import type { Order, OrderCheckpoint } from './order.types';
 
 export const checkpointKeys = [
   'pickup_checkin',

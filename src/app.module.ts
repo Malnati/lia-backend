@@ -1,20 +1,14 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule, ConfigService } from '@nestjs/config';
-import { MongooseModule } from '@nestjs/mongoose';
+import { ConfigModule } from '@nestjs/config';
+import { DbHealthController } from './db/db-health.controller';
 import { HealthController } from './health/health.controller';
 import { OrdersModule } from './orders/orders.module';
+import { SupabaseService } from './supabase/supabase.service';
 
 @Module({
-  imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
-    MongooseModule.forRootAsync({
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        uri: config.get<string>('MONGODB_URI', 'mongodb://localhost:27017/lia')
-      })
-    }),
-    OrdersModule
-  ],
-  controllers: [HealthController]
+  imports: [ConfigModule.forRoot({ isGlobal: true }), OrdersModule],
+  controllers: [HealthController, DbHealthController],
+  providers: [SupabaseService],
+  exports: [SupabaseService]
 })
 export class AppModule {}

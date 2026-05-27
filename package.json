@@ -14,12 +14,10 @@
     "@nestjs/common": "latest",
     "@nestjs/config": "latest",
     "@nestjs/core": "latest",
-    "@nestjs/mongoose": "latest",
     "@nestjs/platform-express": "latest",
+    "@supabase/supabase-js": "^2.106.2",
     "class-transformer": "latest",
     "class-validator": "latest",
-    "mongodb": "^7.2.0",
-    "mongoose": "latest",
     "multer": "^2.1.1",
     "reflect-metadata": "latest",
     "rxjs": "latest"
@@ -32,7 +30,7 @@
     "typescript": "latest",
     "vitest": "latest"
   },
-  "description": "Lia backend — API NestJS para pedidos, checkpoints, anexos GridFS e pagamentos mock.",
+  "description": "Lia backend — API NestJS real para Supabase/Postgres, pedidos, checkpoints, anexos e pagamentos.",
   "license": "MIT",
   "packageManager": "pnpm@10.33.2",
   "engines": {

@@ -1,5 +1,6 @@
 import { IsBoolean, IsIn, IsOptional, IsString } from 'class-validator';
 import { orderStatuses, type OrderStatus } from '../order-status';
+import { paymentStatuses, type PaymentStatus } from '../order.types';
 
 export class UpdateOrderDto {
   @IsString()
@@ -22,9 +23,9 @@ export class UpdateOrderDto {
   @IsOptional()
   status?: OrderStatus;
 
-  @IsIn(['pending', 'paid', 'failed', 'mock_pending'])
+  @IsIn(paymentStatuses)
   @IsOptional()
-  paymentStatus?: 'pending' | 'paid' | 'failed' | 'mock_pending';
+  paymentStatus?: PaymentStatus;
 
   @IsBoolean()
   @IsOptional()

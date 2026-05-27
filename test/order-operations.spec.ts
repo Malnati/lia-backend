@@ -4,8 +4,7 @@ import {
   isAllowedAttachmentMime,
   maxAttachmentSizeBytes
 } from '../src/orders/order-operations';
-import type { Order } from '../src/orders/schemas/order.schema';
-import { MockPaymentProvider } from '../src/orders/payment/mock-payment.provider';
+import type { Order } from '../src/orders/order.types';
 
 function makeOrder(): Order {
   return {
@@ -59,17 +58,5 @@ describe('order operations', () => {
     expect(isAllowedAttachmentMime('image/png')).toBe(true);
     expect(isAllowedAttachmentMime('application/pdf')).toBe(false);
     expect(maxAttachmentSizeBytes).toBe(5 * 1024 * 1024);
-  });
-
-  it('creates a mock payment intent without requiring a real provider', async () => {
-    const provider = new MockPaymentProvider();
-
-    const intent = await provider.createIntent({ orderId: 'order-1', amount: 0, currency: 'PYG' });
-
-    expect(intent).toMatchObject({
-      provider: 'mock',
-      status: 'mock_pending',
-      orderId: 'order-1'
-    });
   });
 });
