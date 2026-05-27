@@ -72,6 +72,31 @@ Prefixo global: `/api`.
 - `GET /api/orders/:id/attachments`
 - `GET /api/orders/:id/attachments/:attachmentId/file`
 - `POST /api/orders/:id/payment-intents`
+- `GET /api/users`
+- `POST /api/users`
+- `PATCH /api/users/:id`
+- `GET /api/access-profiles`
+- `POST /api/access-profiles`
+- `PATCH /api/access-profiles/:id`
+
+## Autenticação e autorização
+
+- Todas as rotas operacionais de pedidos, anexos, pagamentos, usuários e perfis usam `Authorization: Bearer <supabase-access-token>`.
+- A API valida o token com Supabase Auth (`auth.getUser(token)`) e resolve `tenant_id`, usuário interno, role e permissões em `app_users` + `access_profiles`.
+- Token ausente/inválido retorna 401.
+- Usuário autenticado sem permissão retorna 403.
+- `SUPABASE_SERVICE_ROLE_KEY` é usada somente no backend para operações administrativas e nunca deve ir para frontend/Git.
+
+## CRUD administrativo
+
+Rotas implementadas para o dashboard/admin:
+
+- `GET /api/users` — requer `users:read`.
+- `POST /api/users` — requer `users:write`; pode criar usuário no Supabase Auth via service role quando `authUserId` não for informado.
+- `PATCH /api/users/:id` — requer `users:write`.
+- `GET /api/access-profiles` — requer `profiles:read`.
+- `POST /api/access-profiles` — requer `profiles:write`.
+- `PATCH /api/access-profiles/:id` — requer `profiles:write`.
 
 ## Fluxo de pedidos
 
@@ -110,14 +135,14 @@ Feito:
 - contrato Supabase/Postgres versionado em SQL;
 - healthcheck de conexão Supabase;
 - storage real de anexos via Supabase Storage;
-- payment intents persistidos em Postgres como pendentes de gateway real.
+- payment intents persistidos em Postgres como pendentes de gateway real;
+- validação de JWT Supabase por request;
+- resolução de tenant por usuário autenticado;
+- CRUD usuários/perfis via API.
 
 Pendente:
 
 - secrets reais Supabase/VPS;
-- validação JWT Supabase por request;
-- resolução multi-tenant por usuário autenticado;
-- CRUD usuários/perfis via API;
 - gateway real de pagamento.
 
 ## Validação

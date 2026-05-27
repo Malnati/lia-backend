@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
+import type { AuthContext } from '../auth/auth.types';
 import { SupabaseService } from '../supabase/supabase.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { CreatePaymentIntentDto } from './dto/create-payment-intent.dto';
@@ -94,8 +95,8 @@ export class OrdersService {
     private readonly config: ConfigService
   ) {}
 
-  async create(createOrderDto: CreateOrderDto): Promise<Order> {
-    const tenantId = this.getDefaultTenantId();
+  async create(createOrderDto: CreateOrderDto, auth?: AuthContext): Promise<Order> {
+    const tenantId = this.getTenantId(auth);
     const client = this.supabase.getClient();
     const clientId = createOrderDto.clientId ?? createOrderDto.id;
     const existing = clientId ? await this.findRowByIdOrClientId(clientId, tenantId, false) : null;
@@ -141,11 +142,11 @@ export class OrdersService {
       : createDefaultCheckpoints();
 
     await this.replaceCheckpoints(data.id, tenantId, checkpoints);
-    return this.findByIdOrClientId(data.id);
+    return this.findByIdOrClientId(data.id, auth);
   }
 
-  async findAll(): Promise<Order[]> {
-    const tenantId = this.getDefaultTenantId();
+  async findAll(auth?: AuthContext): Promise<Order[]> {
+    const tenantId = this.getTenantId(auth);
     const { data, error } = await this.supabase
       .getClient()
       .from('orders')
@@ -158,14 +159,14 @@ export class OrdersService {
     return Promise.all(((data ?? []) as OrderRow[]).map((row) => this.rowToOrder(row)));
   }
 
-  async update(id: string, updateOrderDto: UpdateOrderDto): Promise<Order> {
-    const order = await this.findByIdOrClientId(id);
+  async update(id: string, updateOrderDto: UpdateOrderDto, auth?: AuthContext): Promise<Order> {
+    const order = await this.findByIdOrClientId(id, auth);
     applyOrderUpdate(order, updateOrderDto);
     return this.persistOrder(order);
   }
 
-  async updateStatus(id: string, updateOrderStatusDto: UpdateOrderStatusDto): Promise<Order> {
-    const order = await this.findByIdOrClientId(id);
+  async updateStatus(id: string, updateOrderStatusDto: UpdateOrderStatusDto, auth?: AuthContext): Promise<Order> {
+    const order = await this.findByIdOrClientId(id, auth);
 
     if (!canTransitionOrder(order.status, updateOrderStatusDto.status)) {
       throw new BadRequestException(
@@ -178,8 +179,8 @@ export class OrdersService {
     return this.persistOrder(order);
   }
 
-  async updateCheckpoint(id: string, checkpointKey: string, dto: UpdateCheckpointDto): Promise<Order> {
-    const order = await this.findByIdOrClientId(id);
+  async updateCheckpoint(id: string, checkpointKey: string, dto: UpdateCheckpointDto, auth?: AuthContext): Promise<Order> {
+    const order = await this.findByIdOrClientId(id, auth);
     applyCheckpointUpdate(order, checkpointKey, dto);
     const checkpoint = order.checkpoints.find((item) => item.key === checkpointKey);
     if (!checkpoint || !order.id || !order.tenantId) throw new BadRequestException('Invalid checkpoint update');
@@ -204,9 +205,10 @@ export class OrdersService {
   async uploadAttachment(
     orderId: string,
     file: UploadedMemoryFile,
-    metadata: { kind: 'photo' | 'signature'; clientAttachmentId?: string; capturedAt?: string }
+    metadata: { kind: 'photo' | 'signature'; clientAttachmentId?: string; capturedAt?: string },
+    auth?: AuthContext
   ): Promise<AttachmentMetadata> {
-    const order = await this.findByIdOrClientId(orderId);
+    const order = await this.findByIdOrClientId(orderId, auth);
     if (!order.id || !order.tenantId) throw new BadRequestException('Order id is required');
 
     if (!isAllowedAttachmentMime(file.mimetype)) {
@@ -247,8 +249,8 @@ export class OrdersService {
     return this.mapAttachment(data);
   }
 
-  async listAttachments(orderId: string): Promise<AttachmentMetadata[]> {
-    const order = await this.findByIdOrClientId(orderId);
+  async listAttachments(orderId: string, auth?: AuthContext): Promise<AttachmentMetadata[]> {
+    const order = await this.findByIdOrClientId(orderId, auth);
     if (!order.id || !order.tenantId) throw new BadRequestException('Order id is required');
 
     const { data, error } = await this.supabase
@@ -263,8 +265,8 @@ export class OrdersService {
     return ((data ?? []) as AttachmentRow[]).map((row) => this.mapAttachment(row));
   }
 
-  async openAttachmentFile(orderId: string, attachmentId: string) {
-    const order = await this.findByIdOrClientId(orderId);
+  async openAttachmentFile(orderId: string, attachmentId: string, auth?: AuthContext) {
+    const order = await this.findByIdOrClientId(orderId, auth);
     if (!order.id || !order.tenantId) throw new BadRequestException('Order id is required');
 
     const { data: row, error } = await this.supabase
@@ -289,8 +291,8 @@ export class OrdersService {
     };
   }
 
-  async createPaymentIntent(orderId: string, dto: CreatePaymentIntentDto): Promise<PaymentIntent> {
-    const order = await this.findByIdOrClientId(orderId);
+  async createPaymentIntent(orderId: string, dto: CreatePaymentIntentDto, auth?: AuthContext): Promise<PaymentIntent> {
+    const order = await this.findByIdOrClientId(orderId, auth);
     if (!order.id || !order.tenantId) throw new BadRequestException('Order id is required');
 
     const { data, error } = await this.supabase
@@ -314,8 +316,8 @@ export class OrdersService {
     return this.mapPaymentIntent(data);
   }
 
-  private async findByIdOrClientId(id: string): Promise<Order> {
-    const tenantId = this.getDefaultTenantId();
+  private async findByIdOrClientId(id: string, auth?: AuthContext): Promise<Order> {
+    const tenantId = this.getTenantId(auth);
     const row = await this.findRowByIdOrClientId(id, tenantId, true);
     return this.rowToOrder(row);
   }
@@ -416,7 +418,11 @@ export class OrdersService {
     if (error) throw new BadRequestException(error.message);
   }
 
-  private getDefaultTenantId(): string {
+  private getTenantId(auth?: AuthContext): string {
+    if (auth) return auth.tenantId;
+
+    // Fallback only for local smoke paths before JWT-enabled callers are wired.
+
     const tenantId = this.config.get<string>('LIA_DEFAULT_TENANT_ID');
     if (!tenantId) {
       throw new BadRequestException('LIA_DEFAULT_TENANT_ID is required until JWT tenant resolution is enabled');
