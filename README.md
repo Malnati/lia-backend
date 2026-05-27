@@ -57,6 +57,7 @@ Prefixo global: `/api`.
 - Usuário sem permissão retorna 403.
 - O Worker resolve `tenant_id`, usuário interno, role e permissões em `app_users` + `access_profiles`.
 - `SUPABASE_SERVICE_ROLE_KEY` fica somente em Cloudflare secrets/runtime e nunca vai para frontend/Git.
+- Funções auxiliares de RLS ficam no schema `private`, fora dos schemas expostos pela Data API.
 
 ## Supabase/Postgres
 

@@ -3,6 +3,9 @@
 
 create extension if not exists pgcrypto;
 
+create schema if not exists private;
+revoke all on schema private from public, anon, authenticated;
+
 create table if not exists public.tenants (
   id uuid primary key default gen_random_uuid(),
   slug text not null unique,
@@ -133,6 +136,7 @@ create table if not exists public.sync_events (
 create or replace function public.touch_updated_at()
 returns trigger
 language plpgsql
+set search_path = ''
 as $$
 begin
   new.updated_at = now();
@@ -157,17 +161,24 @@ create trigger sync_events_touch_updated_at before update on public.sync_events 
 
 create index if not exists access_profiles_tenant_role_idx on public.access_profiles (tenant_id, role);
 create index if not exists app_users_tenant_auth_idx on public.app_users (tenant_id, auth_user_id);
+create index if not exists app_users_auth_user_idx on public.app_users (auth_user_id);
+create index if not exists app_users_access_profile_idx on public.app_users (access_profile_id);
 create index if not exists app_users_tenant_active_idx on public.app_users (tenant_id, is_active);
 create index if not exists orders_tenant_status_updated_idx on public.orders (tenant_id, status, updated_at desc);
 create index if not exists orders_tenant_payment_status_idx on public.orders (tenant_id, payment_status);
 create index if not exists orders_tenant_assigned_idx on public.orders (tenant_id, assigned_to);
+create index if not exists orders_assigned_to_idx on public.orders (assigned_to);
 create index if not exists order_checkpoints_tenant_order_key_idx on public.order_checkpoints (tenant_id, order_id, key);
+create index if not exists order_checkpoints_order_idx on public.order_checkpoints (order_id);
 create index if not exists attachments_tenant_order_idx on public.attachments (tenant_id, order_id);
+create index if not exists attachments_order_idx on public.attachments (order_id);
 create index if not exists payment_intents_tenant_status_idx on public.payment_intents (tenant_id, status, updated_at desc);
 create index if not exists payment_intents_tenant_order_idx on public.payment_intents (tenant_id, order_id);
+create index if not exists payment_intents_order_idx on public.payment_intents (order_id);
 create index if not exists sync_events_tenant_status_idx on public.sync_events (tenant_id, status, updated_at desc);
+create index if not exists sync_events_app_user_idx on public.sync_events (app_user_id);
 
-create or replace function public.current_tenant_ids()
+create or replace function private.current_tenant_ids()
 returns setof uuid
 language sql
 stable
@@ -180,7 +191,7 @@ as $$
     and app_users.is_active = true;
 $$;
 
-create or replace function public.current_user_can(permission text, tenant uuid)
+create or replace function private.current_user_can(permission text, tenant uuid)
 returns boolean
 language sql
 stable
@@ -218,49 +229,49 @@ alter table public.sync_events force row level security;
 drop policy if exists tenants_by_membership on public.tenants;
 create policy tenants_by_membership on public.tenants
   for select to authenticated
-  using (id in (select public.current_tenant_ids()));
+  using (id in (select private.current_tenant_ids()));
 
 drop policy if exists access_profiles_by_tenant on public.access_profiles;
 create policy access_profiles_by_tenant on public.access_profiles
   for all to authenticated
-  using (tenant_id in (select public.current_tenant_ids()))
-  with check (tenant_id in (select public.current_tenant_ids()));
+  using (tenant_id in (select private.current_tenant_ids()))
+  with check (tenant_id in (select private.current_tenant_ids()));
 
 drop policy if exists app_users_by_tenant on public.app_users;
 create policy app_users_by_tenant on public.app_users
   for all to authenticated
-  using (tenant_id in (select public.current_tenant_ids()))
-  with check (tenant_id in (select public.current_tenant_ids()));
+  using (tenant_id in (select private.current_tenant_ids()))
+  with check (tenant_id in (select private.current_tenant_ids()));
 
 drop policy if exists orders_by_tenant on public.orders;
 create policy orders_by_tenant on public.orders
   for all to authenticated
-  using (tenant_id in (select public.current_tenant_ids()))
-  with check (tenant_id in (select public.current_tenant_ids()));
+  using (tenant_id in (select private.current_tenant_ids()))
+  with check (tenant_id in (select private.current_tenant_ids()));
 
 drop policy if exists order_checkpoints_by_tenant on public.order_checkpoints;
 create policy order_checkpoints_by_tenant on public.order_checkpoints
   for all to authenticated
-  using (tenant_id in (select public.current_tenant_ids()))
-  with check (tenant_id in (select public.current_tenant_ids()));
+  using (tenant_id in (select private.current_tenant_ids()))
+  with check (tenant_id in (select private.current_tenant_ids()));
 
 drop policy if exists attachments_by_tenant on public.attachments;
 create policy attachments_by_tenant on public.attachments
   for all to authenticated
-  using (tenant_id in (select public.current_tenant_ids()))
-  with check (tenant_id in (select public.current_tenant_ids()));
+  using (tenant_id in (select private.current_tenant_ids()))
+  with check (tenant_id in (select private.current_tenant_ids()));
 
 drop policy if exists payment_intents_by_tenant on public.payment_intents;
 create policy payment_intents_by_tenant on public.payment_intents
   for all to authenticated
-  using (tenant_id in (select public.current_tenant_ids()))
-  with check (tenant_id in (select public.current_tenant_ids()));
+  using (tenant_id in (select private.current_tenant_ids()))
+  with check (tenant_id in (select private.current_tenant_ids()));
 
 drop policy if exists sync_events_by_tenant on public.sync_events;
 create policy sync_events_by_tenant on public.sync_events
   for all to authenticated
-  using (tenant_id in (select public.current_tenant_ids()))
-  with check (tenant_id in (select public.current_tenant_ids()));
+  using (tenant_id in (select private.current_tenant_ids()))
+  with check (tenant_id in (select private.current_tenant_ids()));
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('order-attachments', 'order-attachments', false, 5242880, array['image/webp', 'image/jpeg', 'image/png'])
