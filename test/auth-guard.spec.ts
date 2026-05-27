@@ -1,37 +1,20 @@
-import { UnauthorizedException } from '@nestjs/common';
-import { SupabaseAuthGuard } from '../src/auth/supabase-auth.guard';
-import type { AuthContext } from '../src/auth/auth.types';
+import { createApp } from '../src/index';
 
-function contextWithAuthHeader(authorization?: string) {
-  const request: { headers: { authorization?: string }; liaAuth?: AuthContext } = { headers: { authorization } };
-  return {
-    request,
-    executionContext: {
-      switchToHttp: () => ({ getRequest: () => request })
-    } as never
-  };
-}
-
-describe('SupabaseAuthGuard', () => {
+describe('Hono Supabase auth middleware contract', () => {
   it('returns 401 when bearer token is absent', async () => {
-    const guard = new SupabaseAuthGuard({ resolveContextFromToken: async () => ({}) as AuthContext } as never);
-    const { executionContext } = contextWithAuthHeader(undefined);
-
-    await expect(guard.canActivate(executionContext)).rejects.toThrow(UnauthorizedException);
+    const response = await createApp().request('/api/orders', undefined, {});
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({ error: { code: 'unauthorized', message: 'Missing bearer token' } });
   });
 
-  it('attaches resolved tenant auth context when token is valid', async () => {
-    const auth: AuthContext = {
-      authUserId: 'auth-1',
-      appUserId: 'app-1',
-      tenantId: 'tenant-1',
-      role: 'clinic_admin',
-      permissions: ['orders:read']
-    };
-    const guard = new SupabaseAuthGuard({ resolveContextFromToken: async () => auth } as never);
-    const { request, executionContext } = contextWithAuthHeader('Bearer valid-token');
-
-    await expect(guard.canActivate(executionContext)).resolves.toBe(true);
-    expect(request.liaAuth).toEqual(auth);
+  it('returns 400 when Supabase is not configured for authenticated routes', async () => {
+    const response = await createApp().request('/api/orders', { headers: { authorization: 'Bearer token' } }, {});
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: 'bad_request',
+        message: 'Supabase is not configured: set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY'
+      }
+    });
   });
 });

@@ -1,8 +1,9 @@
-import { ForbiddenException } from '@nestjs/common';
 import { assertPermission, extractBearerToken, hasPermission } from '../src/auth/auth-operations';
 import type { AuthContext } from '../src/auth/auth.types';
+import { HttpError } from '../src/http-error';
 
 const context: AuthContext = {
+  accessToken: 'token',
   authUserId: 'auth-user-1',
   appUserId: 'app-user-1',
   tenantId: 'tenant-1',
@@ -25,6 +26,7 @@ describe('Supabase auth contract', () => {
   });
 
   it('raises 403 for authenticated users without the required permission', () => {
-    expect(() => assertPermission(context, 'users:write')).toThrow(ForbiddenException);
+    expect(() => assertPermission(context, 'users:write')).toThrow(HttpError);
+    expect(() => assertPermission(context, 'users:write')).toThrow('Missing permission users:write');
   });
 });

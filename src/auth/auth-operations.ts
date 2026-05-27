@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { forbidden } from '../http-error';
 import type { AppPermission, AuthContext } from './auth.types';
 
 export function extractBearerToken(header: string | string[] | undefined): string | undefined {
@@ -7,12 +7,12 @@ export function extractBearerToken(header: string | string[] | undefined): strin
   return match?.[1]?.trim() || undefined;
 }
 
-export function hasPermission(context: AuthContext, permission: AppPermission): boolean {
+export function hasPermission(context: Pick<AuthContext, 'permissions'>, permission: AppPermission): boolean {
   return context.permissions.includes(permission);
 }
 
-export function assertPermission(context: AuthContext, permission: AppPermission): void {
+export function assertPermission(context: Pick<AuthContext, 'permissions'>, permission: AppPermission): void {
   if (!hasPermission(context, permission)) {
-    throw new ForbiddenException(`Missing permission ${permission}`);
+    throw forbidden(`Missing permission ${permission}`);
   }
 }

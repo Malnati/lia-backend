@@ -1,5 +1,5 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
-import type { Order, OrderCheckpoint } from './order.types';
+import { badRequest, notFound } from '../http-error';
+import type { Order, OrderCheckpoint, UpdateCheckpointInput, UpdateOrderInput } from './order.types';
 
 export const checkpointKeys = [
   'pickup_checkin',
@@ -26,22 +26,8 @@ export function bumpVersion(order: Pick<Order, 'version'>): void {
   order.version = (order.version ?? 0) + 1;
 }
 
-export type OrderPatch = Partial<
-  Pick<
-    Order,
-    | 'customerName'
-    | 'customerPhone'
-    | 'deliveryAddress'
-    | 'product'
-    | 'status'
-    | 'paymentStatus'
-    | 'pendingSync'
-    | 'notes'
-  >
->;
-
-export function applyOrderUpdate(order: Order, patch: OrderPatch): Order {
-  const fields: Array<keyof OrderPatch> = [
+export function applyOrderUpdate(order: Order, patch: UpdateOrderInput): Order {
+  const fields: Array<keyof UpdateOrderInput> = [
     'customerName',
     'customerPhone',
     'deliveryAddress',
@@ -63,16 +49,14 @@ export function applyOrderUpdate(order: Order, patch: OrderPatch): Order {
   return order;
 }
 
-export type CheckpointPatch = Partial<Pick<OrderCheckpoint, 'completed' | 'actor' | 'timestamp' | 'notes'>>;
-
-export function applyCheckpointUpdate(order: Order, checkpointKey: string, patch: CheckpointPatch): Order {
+export function applyCheckpointUpdate(order: Order, checkpointKey: string, patch: UpdateCheckpointInput): Order {
   if (!checkpointKeys.includes(checkpointKey as CheckpointKey)) {
-    throw new BadRequestException(`Unsupported checkpoint ${checkpointKey}`);
+    throw badRequest(`Unsupported checkpoint ${checkpointKey}`);
   }
 
   const checkpoint = order.checkpoints.find((item) => item.key === checkpointKey);
   if (!checkpoint) {
-    throw new NotFoundException(`Checkpoint ${checkpointKey} not found`);
+    throw notFound(`Checkpoint ${checkpointKey} not found`);
   }
 
   if (patch.completed !== undefined) checkpoint.completed = patch.completed;

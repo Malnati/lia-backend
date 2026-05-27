@@ -2,35 +2,27 @@
   "name": "lia-backend",
   "version": "0.1.0",
   "private": true,
-  "type": "commonjs",
+  "type": "module",
   "scripts": {
-    "dev": "nest start --watch",
-    "start": "node dist/main.js",
-    "build": "nest build",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "deploy:dry-run": "wrangler deploy --dry-run",
+    "build": "tsc -p tsconfig.json",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "wrangler": "wrangler"
   },
   "dependencies": {
-    "@nestjs/common": "latest",
-    "@nestjs/config": "latest",
-    "@nestjs/core": "latest",
-    "@nestjs/platform-express": "latest",
     "@supabase/supabase-js": "^2.106.2",
-    "class-transformer": "latest",
-    "class-validator": "latest",
-    "multer": "^2.1.1",
-    "reflect-metadata": "latest",
-    "rxjs": "latest"
+    "hono": "latest"
   },
   "devDependencies": {
-    "@nestjs/cli": "latest",
-    "@types/multer": "^2.1.0",
     "@types/node": "latest",
-    "ts-node": "latest",
     "typescript": "latest",
-    "vitest": "latest"
+    "vitest": "latest",
+    "wrangler": "latest"
   },
-  "description": "Lia backend — API NestJS real para Supabase/Postgres, pedidos, checkpoints, anexos e pagamentos.",
+  "description": "Lia backend — API Cloudflare Workers + Hono real para Supabase/Postgres, pedidos, checkpoints, anexos e pagamentos.",
   "license": "MIT",
   "packageManager": "pnpm@10.33.2",
   "engines": {

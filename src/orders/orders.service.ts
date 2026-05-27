@@ -1,14 +1,6 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { randomUUID } from 'node:crypto';
-import { Readable } from 'node:stream';
 import type { AuthContext } from '../auth/auth.types';
-import { SupabaseService } from '../supabase/supabase.service';
-import { CreateOrderDto } from './dto/create-order.dto';
-import { CreatePaymentIntentDto } from './dto/create-payment-intent.dto';
-import { UpdateCheckpointDto } from './dto/update-checkpoint.dto';
-import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
-import { UpdateOrderDto } from './dto/update-order.dto';
+import { badRequest, notFound } from '../http-error';
+import type { SupabaseService } from '../supabase/supabase.service';
 import {
   applyCheckpointUpdate,
   applyOrderUpdate,
@@ -17,14 +9,14 @@ import {
   maxAttachmentSizeBytes
 } from './order-operations';
 import { canTransitionOrder } from './order-status';
-import type { Order, OrderCheckpoint } from './order.types';
-import type { PaymentIntent } from './payment/payment.types';
+import type { CreateOrderInput, Order, OrderCheckpoint, UpdateCheckpointInput, UpdateOrderInput } from './order.types';
+import type { CreatePaymentIntentInput, PaymentIntent } from './payment/payment.types';
 
-export type UploadedMemoryFile = {
-  originalname: string;
-  mimetype: string;
+export type UploadedWorkerFile = {
+  filename: string;
+  contentType: string;
   size: number;
-  buffer: Buffer;
+  data: ArrayBuffer;
 };
 
 export type AttachmentMetadata = {
@@ -36,6 +28,12 @@ export type AttachmentMetadata = {
   size: number;
   clientAttachmentId?: string;
   capturedAt: string;
+};
+
+export type AttachmentFile = {
+  data: ArrayBuffer;
+  filename: string;
+  contentType: string;
 };
 
 type OrderRow = {
@@ -77,6 +75,8 @@ type AttachmentRow = {
   captured_at?: string | null;
 };
 
+type AttachmentFileRow = AttachmentRow & { storage_path: string };
+
 type PaymentIntentRow = {
   id: string;
   order_id: string;
@@ -88,21 +88,17 @@ type PaymentIntentRow = {
   created_at?: string;
 };
 
-@Injectable()
 export class OrdersService {
-  constructor(
-    private readonly supabase: SupabaseService,
-    private readonly config: ConfigService
-  ) {}
+  constructor(private readonly supabase: SupabaseService) {}
 
-  async create(createOrderDto: CreateOrderDto, auth?: AuthContext): Promise<Order> {
-    const tenantId = this.getTenantId(auth);
-    const client = this.supabase.getClient();
+  async create(createOrderDto: CreateOrderInput, auth: AuthContext): Promise<Order> {
+    const tenantId = auth.tenantId;
+    const client = this.supabase.getUserClient(auth);
     const clientId = createOrderDto.clientId ?? createOrderDto.id;
-    const existing = clientId ? await this.findRowByIdOrClientId(clientId, tenantId, false) : null;
+    const existing = clientId ? await this.findRowByIdOrClientId(clientId, tenantId, auth, false) : null;
 
     if (existing) {
-      const current = await this.rowToOrder(existing);
+      const current = await this.rowToOrder(existing, auth);
       applyOrderUpdate(current, {
         customerName: createOrderDto.customerName,
         customerPhone: createOrderDto.customerPhone,
@@ -114,7 +110,7 @@ export class OrdersService {
         notes: createOrderDto.notes ?? ''
       });
       current.version = Math.max(current.version, createOrderDto.version ?? current.version);
-      return this.persistOrder(current);
+      return this.persistOrder(current, auth);
     }
 
     const { data, error } = await client
@@ -135,58 +131,55 @@ export class OrdersService {
       .select('*')
       .single<OrderRow>();
 
-    if (error) throw new BadRequestException(error.message);
+    if (error) throw badRequest(error.message);
 
     const checkpoints = Array.isArray(createOrderDto.checkpoints)
       ? (createOrderDto.checkpoints as OrderCheckpoint[])
       : createDefaultCheckpoints();
 
-    await this.replaceCheckpoints(data.id, tenantId, checkpoints);
+    await this.replaceCheckpoints(data.id, tenantId, checkpoints, auth);
     return this.findByIdOrClientId(data.id, auth);
   }
 
-  async findAll(auth?: AuthContext): Promise<Order[]> {
-    const tenantId = this.getTenantId(auth);
+  async findAll(auth: AuthContext): Promise<Order[]> {
     const { data, error } = await this.supabase
-      .getClient()
+      .getUserClient(auth)
       .from('orders')
       .select('*')
-      .eq('tenant_id', tenantId)
+      .eq('tenant_id', auth.tenantId)
       .order('updated_at', { ascending: false })
       .order('created_at', { ascending: false });
 
-    if (error) throw new BadRequestException(error.message);
-    return Promise.all(((data ?? []) as OrderRow[]).map((row) => this.rowToOrder(row)));
+    if (error) throw badRequest(error.message);
+    return Promise.all(((data ?? []) as OrderRow[]).map((row) => this.rowToOrder(row, auth)));
   }
 
-  async update(id: string, updateOrderDto: UpdateOrderDto, auth?: AuthContext): Promise<Order> {
+  async update(id: string, updateOrderDto: UpdateOrderInput, auth: AuthContext): Promise<Order> {
     const order = await this.findByIdOrClientId(id, auth);
     applyOrderUpdate(order, updateOrderDto);
-    return this.persistOrder(order);
+    return this.persistOrder(order, auth);
   }
 
-  async updateStatus(id: string, updateOrderStatusDto: UpdateOrderStatusDto, auth?: AuthContext): Promise<Order> {
+  async updateStatus(id: string, status: Order['status'], auth: AuthContext): Promise<Order> {
     const order = await this.findByIdOrClientId(id, auth);
 
-    if (!canTransitionOrder(order.status, updateOrderStatusDto.status)) {
-      throw new BadRequestException(
-        `Cannot transition order ${id} from ${order.status} to ${updateOrderStatusDto.status}`
-      );
+    if (!canTransitionOrder(order.status, status)) {
+      throw badRequest(`Cannot transition order ${id} from ${order.status} to ${status}`);
     }
 
-    order.status = updateOrderStatusDto.status;
+    order.status = status;
     order.version = (order.version ?? 0) + 1;
-    return this.persistOrder(order);
+    return this.persistOrder(order, auth);
   }
 
-  async updateCheckpoint(id: string, checkpointKey: string, dto: UpdateCheckpointDto, auth?: AuthContext): Promise<Order> {
+  async updateCheckpoint(id: string, checkpointKey: string, dto: UpdateCheckpointInput, auth: AuthContext): Promise<Order> {
     const order = await this.findByIdOrClientId(id, auth);
     applyCheckpointUpdate(order, checkpointKey, dto);
     const checkpoint = order.checkpoints.find((item) => item.key === checkpointKey);
-    if (!checkpoint || !order.id || !order.tenantId) throw new BadRequestException('Invalid checkpoint update');
+    if (!checkpoint || !order.id || !order.tenantId) throw badRequest('Invalid checkpoint update');
 
     const { error } = await this.supabase
-      .getClient()
+      .getUserClient(auth)
       .from('order_checkpoints')
       .update({
         completed: checkpoint.completed,
@@ -198,44 +191,45 @@ export class OrdersService {
       .eq('order_id', order.id)
       .eq('key', checkpointKey);
 
-    if (error) throw new BadRequestException(error.message);
-    return this.persistOrder(order);
+    if (error) throw badRequest(error.message);
+    return this.persistOrder(order, auth);
   }
 
   async uploadAttachment(
     orderId: string,
-    file: UploadedMemoryFile,
+    file: UploadedWorkerFile,
     metadata: { kind: 'photo' | 'signature'; clientAttachmentId?: string; capturedAt?: string },
-    auth?: AuthContext
+    auth: AuthContext
   ): Promise<AttachmentMetadata> {
     const order = await this.findByIdOrClientId(orderId, auth);
-    if (!order.id || !order.tenantId) throw new BadRequestException('Order id is required');
+    if (!order.id || !order.tenantId) throw badRequest('Order id is required');
 
-    if (!isAllowedAttachmentMime(file.mimetype)) {
-      throw new BadRequestException(`Unsupported attachment type ${file.mimetype}`);
+    if (!isAllowedAttachmentMime(file.contentType)) {
+      throw badRequest(`Unsupported attachment type ${file.contentType}`);
     }
     if (file.size > maxAttachmentSizeBytes) {
-      throw new BadRequestException(`Attachment exceeds ${maxAttachmentSizeBytes} bytes`);
+      throw badRequest(`Attachment exceeds ${maxAttachmentSizeBytes} bytes`);
     }
 
-    const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]+/g, '-');
-    const storagePath = `${order.tenantId}/${order.id}/${randomUUID()}-${safeName}`;
-    const client = this.supabase.getClient();
-    const upload = await client.storage.from('order-attachments').upload(storagePath, file.buffer, {
-      contentType: file.mimetype,
+    const safeName = file.filename.replace(/[^a-zA-Z0-9._-]+/g, '-');
+    const storagePath = `${order.tenantId}/${order.id}/${crypto.randomUUID()}-${safeName}`;
+    const client = this.supabase.getServiceClient();
+    const upload = await client.storage.from('order-attachments').upload(storagePath, file.data, {
+      contentType: file.contentType,
       upsert: false
     });
-    if (upload.error) throw new BadRequestException(upload.error.message);
+    if (upload.error) throw badRequest(upload.error.message);
 
     const capturedAt = metadata.capturedAt ?? new Date().toISOString();
-    const { data, error } = await client
+    const { data, error } = await this.supabase
+      .getUserClient(auth)
       .from('attachments')
       .insert({
         tenant_id: order.tenantId,
         order_id: order.id,
         kind: metadata.kind,
-        filename: file.originalname,
-        content_type: file.mimetype,
+        filename: file.filename,
+        content_type: file.contentType,
         size_bytes: file.size,
         storage_bucket: 'order-attachments',
         storage_path: storagePath,
@@ -245,58 +239,57 @@ export class OrdersService {
       .select('*')
       .single<AttachmentRow>();
 
-    if (error) throw new BadRequestException(error.message);
+    if (error) throw badRequest(error.message);
     return this.mapAttachment(data);
   }
 
-  async listAttachments(orderId: string, auth?: AuthContext): Promise<AttachmentMetadata[]> {
+  async listAttachments(orderId: string, auth: AuthContext): Promise<AttachmentMetadata[]> {
     const order = await this.findByIdOrClientId(orderId, auth);
-    if (!order.id || !order.tenantId) throw new BadRequestException('Order id is required');
+    if (!order.id || !order.tenantId) throw badRequest('Order id is required');
 
     const { data, error } = await this.supabase
-      .getClient()
+      .getUserClient(auth)
       .from('attachments')
       .select('*')
       .eq('tenant_id', order.tenantId)
       .eq('order_id', order.id)
       .order('captured_at', { ascending: false });
 
-    if (error) throw new BadRequestException(error.message);
+    if (error) throw badRequest(error.message);
     return ((data ?? []) as AttachmentRow[]).map((row) => this.mapAttachment(row));
   }
 
-  async openAttachmentFile(orderId: string, attachmentId: string, auth?: AuthContext) {
+  async openAttachmentFile(orderId: string, attachmentId: string, auth: AuthContext): Promise<AttachmentFile> {
     const order = await this.findByIdOrClientId(orderId, auth);
-    if (!order.id || !order.tenantId) throw new BadRequestException('Order id is required');
+    if (!order.id || !order.tenantId) throw badRequest('Order id is required');
 
     const { data: row, error } = await this.supabase
-      .getClient()
+      .getUserClient(auth)
       .from('attachments')
       .select('*')
       .eq('tenant_id', order.tenantId)
       .eq('order_id', order.id)
       .eq('id', attachmentId)
-      .single<AttachmentRow & { storage_path: string }>();
+      .single<AttachmentFileRow>();
 
-    if (error || !row) throw new NotFoundException(`Attachment ${attachmentId} not found`);
+    if (error || !row) throw notFound(`Attachment ${attachmentId} not found`);
 
-    const download = await this.supabase.getClient().storage.from('order-attachments').download(row.storage_path);
-    if (download.error || !download.data) throw new NotFoundException(`Attachment ${attachmentId} file not found`);
+    const download = await this.supabase.getServiceClient().storage.from('order-attachments').download(row.storage_path);
+    if (download.error || !download.data) throw notFound(`Attachment ${attachmentId} file not found`);
 
-    const buffer = Buffer.from(await download.data.arrayBuffer());
     return {
-      stream: Readable.from(buffer),
+      data: await download.data.arrayBuffer(),
       filename: row.filename,
       contentType: row.content_type
     };
   }
 
-  async createPaymentIntent(orderId: string, dto: CreatePaymentIntentDto, auth?: AuthContext): Promise<PaymentIntent> {
+  async createPaymentIntent(orderId: string, dto: CreatePaymentIntentInput, auth: AuthContext): Promise<PaymentIntent> {
     const order = await this.findByIdOrClientId(orderId, auth);
-    if (!order.id || !order.tenantId) throw new BadRequestException('Order id is required');
+    if (!order.id || !order.tenantId) throw badRequest('Order id is required');
 
     const { data, error } = await this.supabase
-      .getClient()
+      .getUserClient(auth)
       .from('payment_intents')
       .insert({
         tenant_id: order.tenantId,
@@ -309,35 +302,34 @@ export class OrdersService {
       .select('*')
       .single<PaymentIntentRow>();
 
-    if (error) throw new BadRequestException(error.message);
+    if (error) throw badRequest(error.message);
     order.paymentStatus = 'pending';
     order.version = (order.version ?? 0) + 1;
-    await this.persistOrder(order);
+    await this.persistOrder(order, auth);
     return this.mapPaymentIntent(data);
   }
 
-  private async findByIdOrClientId(id: string, auth?: AuthContext): Promise<Order> {
-    const tenantId = this.getTenantId(auth);
-    const row = await this.findRowByIdOrClientId(id, tenantId, true);
-    return this.rowToOrder(row);
+  private async findByIdOrClientId(id: string, auth: AuthContext): Promise<Order> {
+    const row = await this.findRowByIdOrClientId(id, auth.tenantId, auth, true);
+    return this.rowToOrder(row, auth);
   }
 
-  private async findRowByIdOrClientId(id: string, tenantId: string, required: true): Promise<OrderRow>;
-  private async findRowByIdOrClientId(id: string, tenantId: string, required: false): Promise<OrderRow | null>;
-  private async findRowByIdOrClientId(id: string, tenantId: string, required: boolean): Promise<OrderRow | null> {
+  private async findRowByIdOrClientId(id: string, tenantId: string, auth: AuthContext, required: true): Promise<OrderRow>;
+  private async findRowByIdOrClientId(id: string, tenantId: string, auth: AuthContext, required: false): Promise<OrderRow | null>;
+  private async findRowByIdOrClientId(id: string, tenantId: string, auth: AuthContext, required: boolean): Promise<OrderRow | null> {
     const key = isUuid(id) ? 'id' : 'client_id';
-    const query = this.supabase.getClient().from('orders').select('*').eq('tenant_id', tenantId).eq(key, id);
+    const query = this.supabase.getUserClient(auth).from('orders').select('*').eq('tenant_id', tenantId).eq(key, id);
     const { data, error } = await query.maybeSingle<OrderRow>();
 
-    if (error) throw new BadRequestException(error.message);
-    if (!data && required) throw new NotFoundException(`Order ${id} not found`);
+    if (error) throw badRequest(error.message);
+    if (!data && required) throw notFound(`Order ${id} not found`);
     return data ?? null;
   }
 
-  private async persistOrder(order: Order): Promise<Order> {
-    if (!order.id || !order.tenantId) throw new BadRequestException('Order id is required');
+  private async persistOrder(order: Order, auth: AuthContext): Promise<Order> {
+    if (!order.id || !order.tenantId) throw badRequest('Order id is required');
     const { data, error } = await this.supabase
-      .getClient()
+      .getUserClient(auth)
       .from('orders')
       .update({
         customer_name: order.customerName,
@@ -355,20 +347,20 @@ export class OrdersService {
       .select('*')
       .single<OrderRow>();
 
-    if (error) throw new BadRequestException(error.message);
-    return this.rowToOrder(data);
+    if (error) throw badRequest(error.message);
+    return this.rowToOrder(data, auth);
   }
 
-  private async rowToOrder(row: OrderRow): Promise<Order> {
+  private async rowToOrder(row: OrderRow, auth: AuthContext): Promise<Order> {
     const { data, error } = await this.supabase
-      .getClient()
+      .getUserClient(auth)
       .from('order_checkpoints')
       .select('*')
       .eq('tenant_id', row.tenant_id)
       .eq('order_id', row.id)
       .order('created_at', { ascending: true });
 
-    if (error) throw new BadRequestException(error.message);
+    if (error) throw badRequest(error.message);
 
     return {
       id: row.id,
@@ -398,8 +390,8 @@ export class OrdersService {
     };
   }
 
-  private async replaceCheckpoints(orderId: string, tenantId: string, checkpoints: OrderCheckpoint[]): Promise<void> {
-    const client = this.supabase.getClient();
+  private async replaceCheckpoints(orderId: string, tenantId: string, checkpoints: OrderCheckpoint[], auth: AuthContext): Promise<void> {
+    const client = this.supabase.getUserClient(auth);
     await client.from('order_checkpoints').delete().eq('tenant_id', tenantId).eq('order_id', orderId);
 
     const { error } = await client.from('order_checkpoints').insert(
@@ -415,19 +407,7 @@ export class OrdersService {
       }))
     );
 
-    if (error) throw new BadRequestException(error.message);
-  }
-
-  private getTenantId(auth?: AuthContext): string {
-    if (auth) return auth.tenantId;
-
-    // Fallback only for local smoke paths before JWT-enabled callers are wired.
-
-    const tenantId = this.config.get<string>('LIA_DEFAULT_TENANT_ID');
-    if (!tenantId) {
-      throw new BadRequestException('LIA_DEFAULT_TENANT_ID is required until JWT tenant resolution is enabled');
-    }
-    return tenantId;
+    if (error) throw badRequest(error.message);
   }
 
   private mapAttachment(row: AttachmentRow): AttachmentMetadata {
@@ -458,5 +438,5 @@ export class OrdersService {
 }
 
 function isUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(value);
 }

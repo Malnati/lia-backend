@@ -1,8 +1,6 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
-import { SupabaseService } from '../supabase/supabase.service';
 import type { AuthContext } from '../auth/auth.types';
-import { CreateUserDto } from './dto/create-user.dto';
-import { UpdateUserDto } from './dto/update-user.dto';
+import { badRequest } from '../http-error';
+import type { SupabaseService } from '../supabase/supabase.service';
 
 export type AppUserView = {
   id: string;
@@ -16,6 +14,19 @@ export type AppUserView = {
   isActive: boolean;
 };
 
+export type CreateUserInput = {
+  authUserId?: string;
+  email: string;
+  password?: string;
+  fullName: string;
+  phone?: string;
+  role: string;
+  accessProfileId?: string;
+  isActive?: boolean;
+};
+
+export type UpdateUserInput = Partial<Omit<CreateUserInput, 'password' | 'authUserId'>> & { accessProfileId?: string | null };
+
 type AppUserRow = {
   id: string;
   tenant_id: string;
@@ -28,37 +39,37 @@ type AppUserRow = {
   is_active: boolean;
 };
 
-@Injectable()
 export class UsersService {
   constructor(private readonly supabase: SupabaseService) {}
 
   async findAll(auth: AuthContext): Promise<AppUserView[]> {
     const { data, error } = await this.supabase
-      .getClient()
+      .getUserClient(auth)
       .from('app_users')
       .select('*')
       .eq('tenant_id', auth.tenantId)
       .order('full_name', { ascending: true });
 
-    if (error) throw new BadRequestException(error.message);
+    if (error) throw badRequest(error.message);
     return ((data ?? []) as AppUserRow[]).map(mapAppUser);
   }
 
-  async create(auth: AuthContext, dto: CreateUserDto): Promise<AppUserView> {
-    const client = this.supabase.getClient();
+  async create(auth: AuthContext, dto: CreateUserInput): Promise<AppUserView> {
+    const serviceClient = this.supabase.getServiceClient();
     let authUserId = dto.authUserId;
 
     if (!authUserId) {
-      const { data: authData, error: authError } = await client.auth.admin.createUser({
+      const { data: authData, error: authError } = await serviceClient.auth.admin.createUser({
         email: dto.email,
         password: dto.password,
         email_confirm: true
       });
-      if (authError || !authData.user) throw new BadRequestException(authError?.message ?? 'Supabase Auth user not created');
+      if (authError || !authData.user) throw badRequest(authError?.message ?? 'Supabase Auth user not created');
       authUserId = authData.user.id;
     }
 
-    const { data, error } = await client
+    const { data, error } = await this.supabase
+      .getUserClient(auth)
       .from('app_users')
       .insert({
         tenant_id: auth.tenantId,
@@ -73,16 +84,16 @@ export class UsersService {
       .select('*')
       .single<AppUserRow>();
 
-    if (error) throw new BadRequestException(error.message);
+    if (error) throw badRequest(error.message);
     return mapAppUser(data);
   }
 
-  async update(auth: AuthContext, id: string, dto: UpdateUserDto): Promise<AppUserView> {
-    const client = this.supabase.getClient();
+  async update(auth: AuthContext, id: string, dto: UpdateUserInput): Promise<AppUserView> {
+    const serviceClient = this.supabase.getServiceClient();
     if (dto.email) {
       const current = await this.findOneRow(auth, id);
-      const { error: authError } = await client.auth.admin.updateUserById(current.auth_user_id, { email: dto.email });
-      if (authError) throw new BadRequestException(authError.message);
+      const { error: authError } = await serviceClient.auth.admin.updateUserById(current.auth_user_id, { email: dto.email });
+      if (authError) throw badRequest(authError.message);
     }
 
     const patch: Record<string, unknown> = {};
@@ -93,7 +104,8 @@ export class UsersService {
     if (dto.accessProfileId !== undefined) patch.access_profile_id = dto.accessProfileId;
     if (dto.isActive !== undefined) patch.is_active = dto.isActive;
 
-    const { data, error } = await client
+    const { data, error } = await this.supabase
+      .getUserClient(auth)
       .from('app_users')
       .update(patch)
       .eq('tenant_id', auth.tenantId)
@@ -101,24 +113,24 @@ export class UsersService {
       .select('*')
       .single<AppUserRow>();
 
-    if (error) throw new BadRequestException(error.message);
+    if (error) throw badRequest(error.message);
     return mapAppUser(data);
   }
 
   private async findOneRow(auth: AuthContext, id: string): Promise<AppUserRow> {
     const { data, error } = await this.supabase
-      .getClient()
+      .getUserClient(auth)
       .from('app_users')
       .select('*')
       .eq('tenant_id', auth.tenantId)
       .eq('id', id)
       .single<AppUserRow>();
-    if (error) throw new BadRequestException(error.message);
+    if (error) throw badRequest(error.message);
     return data;
   }
 }
 
-function mapAppUser(row: AppUserRow): AppUserView {
+export function mapAppUser(row: AppUserRow): AppUserView {
   return {
     id: row.id,
     tenantId: row.tenant_id,

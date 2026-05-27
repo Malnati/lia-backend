@@ -1,6 +1,15 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { badRequest } from '../http-error';
+import type { AuthContext } from '../auth/auth.types';
+
+export type WorkerEnv = {
+  SUPABASE_URL?: string;
+  SUPABASE_ANON_KEY?: string;
+  SUPABASE_SERVICE_ROLE_KEY?: string;
+  CORS_ORIGINS?: string;
+  LIA_DEFAULT_TENANT_ID?: string;
+  PAYMENT_GATEWAY_PROVIDER?: string;
+};
 
 export type SupabaseHealth = {
   status: 'ok' | 'not_configured' | 'error';
@@ -9,35 +18,55 @@ export type SupabaseHealth = {
   error?: string;
 };
 
-@Injectable()
 export class SupabaseService {
-  private client?: SupabaseClient;
+  private serviceClient?: SupabaseClient;
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(private readonly env: WorkerEnv) {}
 
   isConfigured(): boolean {
-    return Boolean(this.config.get<string>('SUPABASE_URL') && this.config.get<string>('SUPABASE_SERVICE_ROLE_KEY'));
+    return Boolean(this.env.SUPABASE_URL && this.env.SUPABASE_SERVICE_ROLE_KEY);
   }
 
-  getClient(): SupabaseClient {
-    if (!this.isConfigured()) {
-      throw new InternalServerErrorException('Supabase is not configured: set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY');
+  hasUserClientConfig(): boolean {
+    return Boolean(this.env.SUPABASE_URL && this.env.SUPABASE_ANON_KEY);
+  }
+
+  getServiceClient(): SupabaseClient {
+    if (!this.env.SUPABASE_URL || !this.env.SUPABASE_SERVICE_ROLE_KEY) {
+      throw badRequest('Supabase is not configured: set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY');
     }
 
-    if (!this.client) {
-      this.client = createClient(
-        this.config.getOrThrow<string>('SUPABASE_URL'),
-        this.config.getOrThrow<string>('SUPABASE_SERVICE_ROLE_KEY'),
-        {
-          auth: {
-            autoRefreshToken: false,
-            persistSession: false
+    if (!this.serviceClient) {
+      this.serviceClient = createClient(this.env.SUPABASE_URL, this.env.SUPABASE_SERVICE_ROLE_KEY, {
+        auth: {
+          autoRefreshToken: false,
+          detectSessionInUrl: false,
+          persistSession: false
+        }
+      });
+    }
+
+    return this.serviceClient;
+  }
+
+  getUserClient(auth: AuthContext): SupabaseClient {
+    if (this.env.SUPABASE_URL && this.env.SUPABASE_ANON_KEY) {
+      return createClient(this.env.SUPABASE_URL, this.env.SUPABASE_ANON_KEY, {
+        auth: {
+          autoRefreshToken: false,
+          detectSessionInUrl: false,
+          persistSession: false
+        },
+        global: {
+          headers: {
+            Authorization: `Bearer ${auth.accessToken}`
           }
         }
-      );
+      });
     }
 
-    return this.client;
+    // Backend-only fallback: still enforces tenant filters in every query, but RLS validation is blocked until anon key exists.
+    return this.getServiceClient();
   }
 
   async checkConnection(): Promise<SupabaseHealth> {
@@ -46,7 +75,7 @@ export class SupabaseService {
       return { status: 'not_configured', configured: false, checkedAt };
     }
 
-    const { error } = await this.getClient().from('tenants').select('id', { head: true, count: 'exact' }).limit(1);
+    const { error } = await this.getServiceClient().from('tenants').select('id', { head: true, count: 'exact' }).limit(1);
 
     if (error) {
       return { status: 'error', configured: true, checkedAt, error: error.message };

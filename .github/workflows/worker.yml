@@ -1,13 +1,15 @@
-name: Deploy backend docs to Cloudflare Pages
+name: Deploy API to Cloudflare Workers
 
 on:
+  push:
+    branches: ["main"]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: cloudflare-pages-lia-backend-docs
+  group: cloudflare-worker-lia-backend
   cancel-in-progress: false
 
 jobs:
@@ -24,8 +26,12 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 22
-      - name: Deploy docs to Cloudflare Pages
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm build
+      - run: pnpm wrangler deploy --dry-run
+      - name: Deploy Worker
         if: ${{ env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' }}
-        uses: cloudflare/wrangler-action@v3
-        with:
-          command: pages deploy public --project-name=lia-backend --branch=main
+        run: pnpm wrangler deploy

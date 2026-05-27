@@ -1,61 +1,32 @@
 # lia-backend
 
-API NestJS real da plataforma Lia.
+API real da plataforma Lia em **Cloudflare Workers Free + Hono**, conectada ao Supabase/Postgres real.
 
-Este repositório é o backend real: NestJS em VPS HTTPS, Supabase/Postgres como banco, Supabase Auth/JWT e RLS como isolamento de tenant.
-
-## Stack
-
-- NestJS + TypeScript
-- Supabase/Postgres
-- Supabase Auth + RLS
-- Supabase Storage para anexos (`order-attachments`)
-- pnpm
+- URL alvo: <https://api.aneety.com/>
+- Runtime: Cloudflare Workers Free
+- Framework HTTP: Hono
+- Banco/Auth/Storage: Supabase/Postgres Free, Supabase Auth e Supabase Storage
+- Custo: zero; não usar Containers, Workers Paid, Logpush, Vectorize ou add-ons pagos.
 
 ## Setup local
 
 ```bash
 pnpm install
-cp .env.example .env
+cp .dev.vars.example .dev.vars
 ```
 
-Configurar no `.env`:
+A fonte local temporária de credenciais é `/Users/mal/GitHub/malnati/lia/.env`. Nunca commite `.env`, `.dev.vars` ou secrets reais.
+
+Variáveis do Worker:
 
 | Variável | Uso | Segurança |
 | --- | --- | --- |
-| `PORT` | Porta da API NestJS | público |
-| `CORS_ORIGIN` | Origem permitida | público |
-| `SUPABASE_URL` | URL do projeto Supabase | público |
-| `SUPABASE_ANON_KEY` | chave pública para referência/frontends | pode ir para frontend |
-| `SUPABASE_SERVICE_ROLE_KEY` | chave privilegiada usada pela API | backend/secrets apenas; nunca Git/frontend |
-| `LIA_DEFAULT_TENANT_ID` | tenant inicial até ativar resolução por JWT | backend |
+| `CORS_ORIGINS` | Origens `aneety.com` autorizadas | público |
+| `SUPABASE_URL` | URL do projeto Supabase | público, mas não precisa ir ao Git |
+| `SUPABASE_ANON_KEY` | chave pública para clients com RLS | pode ir para frontend |
+| `SUPABASE_SERVICE_ROLE_KEY` | chave privilegiada para API/admin | secret backend only |
+| `LIA_DEFAULT_TENANT_ID` | tenant inicial | backend |
 | `PAYMENT_GATEWAY_PROVIDER` | provider real/futuro de pagamento | backend |
-
-## Supabase/Postgres
-
-Migração inicial versionada:
-
-```bash
-supabase db push
-```
-
-Arquivo principal:
-
-- `supabase/migrations/0001_initial_schema.sql`
-
-Inclui tabelas mínimas de `REQ.md`: `tenants`, `access_profiles`, `app_users`, `orders`, `order_checkpoints`, `attachments`, `payment_intents`, `sync_events`.
-
-## Rodar API
-
-```bash
-pnpm dev
-```
-
-URLs padrão:
-
-- API: <http://localhost:3000/api>
-- Healthcheck: <http://localhost:3000/api/health>
-- DB healthcheck: <http://localhost:3000/api/db/health>
 
 ## Endpoints
 
@@ -81,69 +52,37 @@ Prefixo global: `/api`.
 
 ## Autenticação e autorização
 
-- Todas as rotas operacionais de pedidos, anexos, pagamentos, usuários e perfis usam `Authorization: Bearer <supabase-access-token>`.
-- A API valida o token com Supabase Auth (`auth.getUser(token)`) e resolve `tenant_id`, usuário interno, role e permissões em `app_users` + `access_profiles`.
+- Rotas operacionais exigem `Authorization: Bearer <supabase-access-token>`.
 - Token ausente/inválido retorna 401.
-- Usuário autenticado sem permissão retorna 403.
-- `SUPABASE_SERVICE_ROLE_KEY` é usada somente no backend para operações administrativas e nunca deve ir para frontend/Git.
+- Usuário sem permissão retorna 403.
+- O Worker resolve `tenant_id`, usuário interno, role e permissões em `app_users` + `access_profiles`.
+- `SUPABASE_SERVICE_ROLE_KEY` fica somente em Cloudflare secrets/runtime e nunca vai para frontend/Git.
 
-## CRUD administrativo
+## Supabase/Postgres
 
-Rotas implementadas para o dashboard/admin:
+Migração inicial versionada:
 
-- `GET /api/users` — requer `users:read`.
-- `POST /api/users` — requer `users:write`; pode criar usuário no Supabase Auth via service role quando `authUserId` não for informado.
-- `PATCH /api/users/:id` — requer `users:write`.
-- `GET /api/access-profiles` — requer `profiles:read`.
-- `POST /api/access-profiles` — requer `profiles:write`.
-- `PATCH /api/access-profiles/:id` — requer `profiles:write`.
+```bash
+supabase db push
+```
 
-## Fluxo de pedidos
+Arquivo principal:
 
-Status alinhados ao `REQ.md`:
+- `supabase/migrations/0001_initial_schema.sql`
 
-- `draft`
-- `awaiting_payment`
-- `paid`
-- `pickup_scheduled`
-- `picked_up`
-- `in_model_production`
-- `model_ready`
-- `in_prosthesis_production`
-- `prosthesis_ready`
-- `ready_for_delivery`
-- `delivery_scheduled`
-- `delivered`
-- `cancelled`
+Inclui tabelas mínimas de `REQ.md`: `tenants`, `access_profiles`, `app_users`, `orders`, `order_checkpoints`, `attachments`, `payment_intents`, `sync_events`.
 
-Checkpoints padrão:
+## Deploy Cloudflare Free
 
-- `pickup_checkin`
-- `pickup_checkout`
-- `model_production_start`
-- `model_production_done`
-- `prosthesis_production_start`
-- `prosthesis_production_done`
-- `delivery_checkin`
-- `delivery_checkout`
+`wrangler.jsonc` define o custom domain `api.aneety.com`.
 
-## Status da migração
+```bash
+CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=... pnpm wrangler check
+CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=... pnpm wrangler deploy --dry-run
+CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=... pnpm wrangler deploy
+```
 
-Feito:
-
-- remoção da dependência Mongo/Mongoose;
-- contrato Supabase/Postgres versionado em SQL;
-- healthcheck de conexão Supabase;
-- storage real de anexos via Supabase Storage;
-- payment intents persistidos em Postgres como pendentes de gateway real;
-- validação de JWT Supabase por request;
-- resolução de tenant por usuário autenticado;
-- CRUD usuários/perfis via API.
-
-Pendente:
-
-- secrets reais Supabase/VPS;
-- gateway real de pagamento.
+Secrets reais devem ser cadastrados com `wrangler secret put` ou via dashboard/API Cloudflare.
 
 ## Validação
 
@@ -151,4 +90,6 @@ Pendente:
 pnpm lint
 pnpm test
 pnpm build
+pnpm wrangler check
+pnpm wrangler deploy --dry-run
 ```

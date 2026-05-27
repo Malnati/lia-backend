@@ -1,5 +1,5 @@
-import { ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
-import { SupabaseService } from '../supabase/supabase.service';
+import type { SupabaseService } from '../supabase/supabase.service';
+import { forbidden, unauthorized } from '../http-error';
 import type { AppPermission, AuthContext } from './auth.types';
 
 type AccessProfileRelation = { permissions?: string[] | null } | Array<{ permissions?: string[] | null }> | null;
@@ -14,17 +14,16 @@ type AppUserRow = {
   access_profiles?: AccessProfileRelation;
 };
 
-@Injectable()
 export class AuthService {
   constructor(private readonly supabase: SupabaseService) {}
 
   async resolveContextFromToken(token: string): Promise<AuthContext> {
-    const client = this.supabase.getClient();
+    const client = this.supabase.getServiceClient();
     const { data: authData, error: authError } = await client.auth.getUser(token);
     const user = authData.user;
 
     if (authError || !user) {
-      throw new UnauthorizedException('Invalid Supabase access token');
+      throw unauthorized('Invalid Supabase access token');
     }
 
     const { data: appUser, error: appUserError } = await client
@@ -34,10 +33,11 @@ export class AuthService {
       .eq('is_active', true)
       .maybeSingle<AppUserRow>();
 
-    if (appUserError) throw new UnauthorizedException(appUserError.message);
-    if (!appUser) throw new ForbiddenException('Authenticated user has no active Lia profile');
+    if (appUserError) throw unauthorized(appUserError.message);
+    if (!appUser) throw forbidden('Authenticated user has no active Lia profile');
 
     return {
+      accessToken: token,
       authUserId: user.id,
       appUserId: appUser.id,
       tenantId: appUser.tenant_id,

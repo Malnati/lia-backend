@@ -17,15 +17,11 @@ export type AppPermission =
   | 'dashboard:read';
 
 export type AuthContext = {
+  accessToken: string;
   authUserId: string;
   appUserId: string;
   tenantId: string;
   role: string;
   permissions: AppPermission[];
   email?: string;
-};
-
-export type RequestWithAuth = {
-  liaAuth?: AuthContext;
-  headers?: Record<string, string | string[] | undefined>;
 };

@@ -10,3 +10,8 @@ export type PaymentIntent = {
   checkoutUrl?: string;
   createdAt: string;
 };
+
+export type CreatePaymentIntentInput = {
+  amount?: number;
+  currency?: 'PYG' | 'USD';
+};
