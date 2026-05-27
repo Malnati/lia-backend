@@ -61,7 +61,8 @@ create table if not exists public.orders (
   unique (tenant_id, client_id),
   constraint orders_status_check check (status in (
     'draft', 'awaiting_payment', 'paid', 'pickup_scheduled', 'picked_up',
-    'in_production', 'ready_for_delivery', 'delivery_scheduled', 'delivered', 'cancelled'
+    'in_model_production', 'model_ready', 'in_prosthesis_production', 'prosthesis_ready',
+    'ready_for_delivery', 'delivery_scheduled', 'delivered', 'cancelled'
   )),
   constraint orders_payment_status_check check (payment_status in ('pending', 'authorized', 'paid', 'failed', 'cancelled'))
 );

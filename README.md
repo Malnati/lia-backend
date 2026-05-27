@@ -73,6 +73,35 @@ Prefixo global: `/api`.
 - `GET /api/orders/:id/attachments/:attachmentId/file`
 - `POST /api/orders/:id/payment-intents`
 
+## Fluxo de pedidos
+
+Status alinhados ao `REQ.md`:
+
+- `draft`
+- `awaiting_payment`
+- `paid`
+- `pickup_scheduled`
+- `picked_up`
+- `in_model_production`
+- `model_ready`
+- `in_prosthesis_production`
+- `prosthesis_ready`
+- `ready_for_delivery`
+- `delivery_scheduled`
+- `delivered`
+- `cancelled`
+
+Checkpoints padrão:
+
+- `pickup_checkin`
+- `pickup_checkout`
+- `model_production_start`
+- `model_production_done`
+- `prosthesis_production_start`
+- `prosthesis_production_done`
+- `delivery_checkin`
+- `delivery_checkout`
+
 ## Status da migração
 
 Feito:

@@ -4,6 +4,10 @@ import type { Order, OrderCheckpoint } from './order.types';
 export const checkpointKeys = [
   'pickup_checkin',
   'pickup_checkout',
+  'model_production_start',
+  'model_production_done',
+  'prosthesis_production_start',
+  'prosthesis_production_done',
   'delivery_checkin',
   'delivery_checkout'
 ] as const;
@@ -84,6 +88,10 @@ export function createDefaultCheckpoints(): OrderCheckpoint[] {
   return [
     { key: 'pickup_checkin', label: 'Retirada check-in', completed: false },
     { key: 'pickup_checkout', label: 'Retirada check-out', completed: false },
+    { key: 'model_production_start', label: 'Produção de molde início', completed: false },
+    { key: 'model_production_done', label: 'Produção de molde conclusão', completed: false },
+    { key: 'prosthesis_production_start', label: 'Produção de prótese início', completed: false },
+    { key: 'prosthesis_production_done', label: 'Produção de prótese conclusão', completed: false },
     { key: 'delivery_checkin', label: 'Entrega check-in', completed: false },
     { key: 'delivery_checkout', label: 'Entrega check-out', completed: false }
   ];
