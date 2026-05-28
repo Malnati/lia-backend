@@ -110,7 +110,9 @@ pnpm wrangler deploy --dry-run
 
 ### E2E publicado em `aneety.com`
 
-O E2E publicado da API deve rodar contra `https://api.aneety.com` e autenticação real modelada no banco. Ele deve cobrir:
+O E2E publicado da API deve rodar contra `https://api.aneety.com` e autenticação real modelada no banco. O workflow não deve bloquear deploy com teste legado baseado em provider externo; enquanto `/api/auth/*` e a massa de autenticação Lia não existirem, o antigo E2E provider-auth só pode rodar manualmente com `LIA_E2E_ALLOW_LEGACY_PROVIDER_AUTH=1` e deve ser tratado como dívida de migração.
+
+Ele deve cobrir:
 
 - 401 para token ausente em `GET /api/orders`;
 - 403 para usuário autenticado no modelo Lia sem `orders:read`;
