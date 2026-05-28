@@ -78,12 +78,21 @@ Inclui tabelas mínimas de `REQ.md`: `tenants`, `access_profiles`, `app_users`, 
 `wrangler.jsonc` define o custom domain `api.aneety.com`.
 
 ```bash
-CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=... pnpm wrangler check
 CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=... pnpm wrangler deploy --dry-run
 CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=... pnpm wrangler deploy
 ```
 
-Secrets reais devem ser cadastrados com `wrangler secret put` ou via dashboard/API Cloudflare.
+Secrets reais devem ser cadastrados com `wrangler secret put` ou via dashboard/API Cloudflare:
+
+```bash
+printf '%s' "$SUPABASE_URL" | pnpm wrangler secret put SUPABASE_URL
+printf '%s' "$SUPABASE_ANON_KEY" | pnpm wrangler secret put SUPABASE_ANON_KEY
+printf '%s' "$SUPABASE_SERVICE_ROLE_KEY" | pnpm wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+```
+
+Se `GET https://api.aneety.com/api/db/health` retornar `not_configured`, o Worker ainda não tem todos os secrets necessários. O PAT local `SUPABASE_KEY` usado pelo MCP não substitui `SUPABASE_SERVICE_ROLE_KEY`; use uma chave Supabase `sb_secret_...`/`service_role` criada no Dashboard em **Settings → API Keys** ou via Management API com permissão `api_gateway_keys_write`, e grave-a apenas como Cloudflare secret.
+
+No Wrangler 4.x, `wrangler check` é um grupo de subcomandos e não valida deploy por si só; use `pnpm wrangler deploy --dry-run` como validação de configuração/bundle.
 
 ## Validação
 
@@ -91,6 +100,5 @@ Secrets reais devem ser cadastrados com `wrangler secret put` ou via dashboard/A
 pnpm lint
 pnpm test
 pnpm build
-pnpm wrangler check
 pnpm wrangler deploy --dry-run
 ```
