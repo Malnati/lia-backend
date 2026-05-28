@@ -5,8 +5,13 @@ API real da plataforma Lia em **Cloudflare Workers Free + Hono**, conectada ao S
 - URL alvo: <https://api.aneety.com/>
 - Runtime: Cloudflare Workers Free
 - Framework HTTP: Hono
-- Banco/Auth/Storage: Supabase/Postgres Free, Supabase Auth e Supabase Storage
+- Banco/Storage: Supabase/Postgres Free e Supabase Storage; autenticação modelada em banco de dados pela API Lia
 - Custo: zero; não usar Containers, Workers Paid, Logpush, Vectorize ou add-ons pagos.
+
+
+## Limites semânticos de serviços externos
+
+A API trata Cloudflare, Supabase/Postgres, storage, CI e qualquer provedor similar como adapters substituíveis. O contrato de aceite é semântico: HTTP stateless em `api.aneety.com`, Postgres relacional com migrations SQL, auth modelada no banco Lia, secrets somente no runtime backend, custo zero e plano de saída documentado antes de qualquer nova dependência.
 
 ## Setup local
 
@@ -52,12 +57,12 @@ Prefixo global: `/api`.
 
 ## Autenticação e autorização
 
-- Rotas operacionais exigem `Authorization: Bearer <supabase-access-token>`.
+- Rotas operacionais exigem `Authorization: Bearer <lia-access-token>` emitido pela API Lia a partir de identidades, credenciais e sessões modeladas no banco.
 - Token ausente/inválido retorna 401.
 - Usuário sem permissão retorna 403.
-- O Worker resolve `tenant_id`, usuário interno, role e permissões em `app_users` + `access_profiles`.
+- O Worker resolve `tenant_id`, identidade, usuário interno, role e permissões em `app_identities` + `app_users` + `access_profiles`.
 - `SUPABASE_SERVICE_ROLE_KEY` fica somente em Cloudflare secrets/runtime e nunca vai para frontend/Git.
-- Funções auxiliares de RLS ficam no schema `private`, fora dos schemas expostos pela Data API.
+- Funções auxiliares de RLS ficam no schema `private`, fora dos schemas expostos pela Data API. Nenhuma regra de aceite deve depender de provedor externo de autenticação.
 
 ## Supabase/Postgres
 
@@ -71,7 +76,7 @@ Arquivo principal:
 
 - `supabase/migrations/0001_initial_schema.sql`
 
-Inclui tabelas mínimas de `REQ.md`: `tenants`, `access_profiles`, `app_users`, `orders`, `order_checkpoints`, `attachments`, `payment_intents`, `sync_events`.
+Inclui tabelas mínimas de `REQ.md`: `tenants`, `access_profiles`, `app_users`, `app_identities`, `auth_credentials`, `auth_sessions`, `orders`, `order_checkpoints`, `attachments`, `payment_intents`, `sync_events`. Se alguma migration ainda não tiver as tabelas de autenticação modelada, isso é lacuna planejada do contrato.
 
 ## Deploy Cloudflare Free
 
@@ -105,10 +110,10 @@ pnpm wrangler deploy --dry-run
 
 ### E2E publicado em `aneety.com`
 
-O E2E publicado da API roda contra `https://api.aneety.com` e Supabase Auth real. Ele cobre:
+O E2E publicado da API deve rodar contra `https://api.aneety.com` e autenticação real modelada no banco. Ele deve cobrir:
 
 - 401 para token ausente em `GET /api/orders`;
-- 403 para usuário autenticado sem `orders:read`;
+- 403 para usuário autenticado no modelo Lia sem `orders:read`;
 - criação/upsert de pedido real via `POST /api/orders`;
 - atualização de checkpoint via `PATCH /api/orders/:id/checkpoints/:checkpointKey`;
 - criação de intenção de pagamento via `POST /api/orders/:id/payment-intents`;
