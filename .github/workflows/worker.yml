@@ -35,3 +35,25 @@ jobs:
       - name: Deploy Worker
         if: ${{ env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' }}
         run: pnpm wrangler deploy
+      - name: Run published API E2E
+        env:
+          LIA_E2E_ENABLED: "1"
+          LIA_E2E_API_URL: https://api.aneety.com
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          LIA_E2E_ADMIN_EMAIL: ${{ secrets.LIA_E2E_ADMIN_EMAIL }}
+          LIA_E2E_ADMIN_PASSWORD: ${{ secrets.LIA_E2E_ADMIN_PASSWORD }}
+          LIA_E2E_LIMITED_EMAIL: ${{ secrets.LIA_E2E_LIMITED_EMAIL }}
+          LIA_E2E_LIMITED_PASSWORD: ${{ secrets.LIA_E2E_LIMITED_PASSWORD }}
+        run: |
+          missing=0
+          for name in VITE_SUPABASE_URL VITE_SUPABASE_PUBLISHABLE_KEY LIA_E2E_ADMIN_EMAIL LIA_E2E_ADMIN_PASSWORD LIA_E2E_LIMITED_EMAIL LIA_E2E_LIMITED_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::warning::Missing $name; skipping published API E2E."
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 0
+          fi
+          pnpm test:e2e

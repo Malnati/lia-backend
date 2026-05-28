@@ -102,3 +102,30 @@ pnpm test
 pnpm build
 pnpm wrangler deploy --dry-run
 ```
+
+### E2E publicado em `aneety.com`
+
+O E2E publicado da API roda contra `https://api.aneety.com` e Supabase Auth real. Ele cobre:
+
+- 401 para token ausente em `GET /api/orders`;
+- 403 para usuário autenticado sem `orders:read`;
+- criação/upsert de pedido real via `POST /api/orders`;
+- atualização de checkpoint via `PATCH /api/orders/:id/checkpoints/:checkpointKey`;
+- criação de intenção de pagamento via `POST /api/orders/:id/payment-intents`;
+- upload, listagem e download de anexo real no Supabase Storage.
+
+Comando:
+
+```bash
+LIA_E2E_ENABLED=1 \
+LIA_E2E_API_URL=https://api.aneety.com \
+VITE_SUPABASE_URL=... \
+VITE_SUPABASE_PUBLISHABLE_KEY=... \
+LIA_E2E_ADMIN_EMAIL=... \
+LIA_E2E_ADMIN_PASSWORD=... \
+LIA_E2E_LIMITED_EMAIL=... \
+LIA_E2E_LIMITED_PASSWORD=... \
+pnpm test:e2e
+```
+
+No GitHub Actions `Deploy API to Cloudflare Workers`, o teste roda após o deploy quando os secrets equivalentes existem. O usuário E2E Admin precisa das permissões `orders:*`, `checkpoints:write`, `attachments:*` e `payments:*`.

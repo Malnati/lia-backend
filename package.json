@@ -10,7 +10,8 @@
     "build": "tsc -p tsconfig.json",
     "lint": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "wrangler": "wrangler"
+    "wrangler": "wrangler",
+    "test:e2e": "vitest run test/e2e"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.2",
